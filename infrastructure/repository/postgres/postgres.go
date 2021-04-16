@@ -89,14 +89,22 @@ func (e ExpenseRow) NamedArgs() []sql.NamedArg {
 	return args
 }
 
-type ExpenseRepository struct {
+type Repository interface {
+	Create(ctx context.Context, expense entity.Expense) (string, error)
+	Update(ctx context.Context, expense entity.Expense) error
+	Delete(ctx context.Context, id string) error
+	Get(ctx context.Context, id string) (entity.Expense, error)
+	Search(context.Context, *entity.ExpenseFilter) ([]entity.Expense, error)
+}
+
+type expenseRepository struct {
 	db      *sql.DB
 	entropy io.Reader
 }
 
-func NewExpenseRepository(db *sql.DB) ExpenseRepository {
+func NewExpenseRepository(db *sql.DB) Repository {
 
-	return ExpenseRepository{
+	return expenseRepository{
 		db:      db,
 		entropy: ulid.Monotonic(rand.New(rand.NewSource(time.Now().Local().UnixNano())), 0),
 	}
@@ -114,7 +122,7 @@ func (b *bigRatAdapter) Scan(value interface{}) error {
 	return nil
 }
 
-func (r ExpenseRepository) Create(ctx context.Context, expense entity.Expense) (string, error) {
+func (r expenseRepository) Create(ctx context.Context, expense entity.Expense) (string, error) {
 	id, err := ulid.New(ulid.Timestamp(time.Now().UTC()), r.entropy)
 	if err != nil {
 		return "", err
@@ -145,7 +153,7 @@ func (r ExpenseRepository) Create(ctx context.Context, expense entity.Expense) (
 	return expense.Id, nil
 }
 
-func (r ExpenseRepository) Update(ctx context.Context, expense entity.Expense) error {
+func (r expenseRepository) Update(ctx context.Context, expense entity.Expense) error {
 	if strings.TrimSpace(expense.Id) == "" {
 		return entity.NewFieldError(nil, "id", "empty", "can't be empty")
 	}
@@ -170,7 +178,7 @@ func (r ExpenseRepository) Update(ctx context.Context, expense entity.Expense) e
 	return nil
 }
 
-func (r ExpenseRepository) Delete(ctx context.Context, id string) error {
+func (r expenseRepository) Delete(ctx context.Context, id string) error {
 	if strings.TrimSpace(id) == "" {
 		return entity.NewFieldError(nil, "id", "empty", "can't be empty")
 	}
@@ -185,7 +193,7 @@ func (r ExpenseRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r ExpenseRepository) Get(ctx context.Context, id string) (entity.Expense, error) {
+func (r expenseRepository) Get(ctx context.Context, id string) (entity.Expense, error) {
 	if strings.TrimSpace(id) == "" {
 		return entity.Expense{}, entity.NewFieldError(nil, "id", "empty", "can't be empty")
 	}
@@ -202,6 +210,6 @@ func (r ExpenseRepository) Get(ctx context.Context, id string) (entity.Expense, 
 	return row.ToExpense()
 }
 
-func (r ExpenseRepository) Search(context.Context, *entity.ExpenseFilter) ([]entity.Expense, error) {
+func (r expenseRepository) Search(context.Context, *entity.ExpenseFilter) ([]entity.Expense, error) {
 	return nil, nil
 }

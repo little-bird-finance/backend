@@ -48,10 +48,11 @@ cover-browser: cover-file ## Mostra o teste de cobertura no browser
 test: ## Executa todos os testes unitários
 	go test $(TESTS_PATH)
 
-integration-test: $(SCANAPI_REPORT_PATH) ## Executa todos os testes com o scanapi
+integration-test: ## Executa todos os testes com o scanapi
+	go test -tags integration ./...
 
 run: ## Executa o código (sobe um server http)
-	go run api/main.go
+	go run cmd/main.go
 
 doc: ## Sobe um server http na porta 8081 com o godoc, precisa ter instalado o go tools: go get -u golang.org/x/tools/...
 	godoc -http $(DOC_ADDR)

@@ -65,8 +65,8 @@ func newRandomExpense() entity.Expense {
 }
 
 func TestCreate(t *testing.T) {
-	repo := ExpenseRepository{entropy: bytes.NewReader([]byte(""))}
-	id, err := repo.Create(context.Background(), entity.Expense{})
+	repoErr := expenseRepository{entropy: bytes.NewReader([]byte(""))}
+	id, err := repoErr.Create(context.Background(), entity.Expense{})
 	assert.Error(t, err, "must return error on invalid ULID")
 	assert.Empty(t, id)
 
@@ -75,7 +75,7 @@ func TestCreate(t *testing.T) {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
 	defer db.Close()
-	repo = NewExpenseRepository(db)
+	repo := NewExpenseRepository(db)
 
 	tests := map[string]struct {
 		expense entity.Expense
