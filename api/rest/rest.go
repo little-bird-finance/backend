@@ -2,6 +2,10 @@ package rest
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math/big"
 	"net/http"
 	"sync"
 	"time"
@@ -38,6 +42,55 @@ import (
 
 // }
 
+func NewRestTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
+type amountRest struct {
+	big.Rat
+}
+
+func NewAmountRest(a big.Rat) *amountRest {
+	if f, _ := a.Float64(); f == 0 {
+		return nil
+	}
+	return &amountRest{a}
+}
+func (a amountRest) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + a.FloatString(2) + `"`), nil
+}
+func (a *amountRest) UnmarshalJSON(data []byte) (err error) {
+	// Fractional seconds are handled implicitly by Parse.
+	_, ok := a.SetString(string(data))
+	if !ok {
+		return errors.New("error on parse amount")
+	}
+	return nil
+}
+
+type ExpenseRest struct {
+	Id     string      `json:"id,omitempty"`
+	Amount *amountRest `json:"amount,omitempty"`
+	When   *time.Time  `json:"when,omitempty"`
+	Where  string      `json:"where,omitempty"`
+	Who    string      `json:"who,omitempty"`
+	What   string      `json:"what,omitempty"`
+}
+
+func NewExpenseRestFromExpense(e entity.Expense) ExpenseRest {
+	return ExpenseRest{
+		Id:     e.Id,
+		Amount: NewAmountRest(e.Amount),
+		When:   NewRestTime(e.When),
+		Where:  e.Where,
+		Who:    e.Who,
+		What:   e.What,
+	}
+}
+
 type Service interface {
 	Start(context.Context)
 	Stop(context.Context) error
@@ -72,42 +125,11 @@ func LogHandler(logger *zerolog.Logger) func(next http.Handler) http.Handler {
 	}
 }
 
-func New(repo ExpenseRepository, ctx context.Context) (Service, error) {
-	l := log.Ctx(ctx)
-	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
-	r.Use(LogHandler(l))
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
-
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		l := log.Ctx(r.Context())
-		w.Write([]byte("hi"))
-		l.Info().Msgf("hello")
-	})
-
-	// // RESTy routes for "articles" resource
-	// r.Route("/expense", func(r chi.Router) {
-	// 	r.With(paginate).Get("/", listArticles)                           // GET /articles
-	// 	r.With(paginate).Get("/{month}-{day}-{year}", listArticlesByDate) // GET /articles/01-16-2017
-
-	// 	r.Post("/", createArticle)       // POST /articles
-	// 	r.Get("/search", searchArticles) // GET /articles/search
-
-	// 	// Regexp url parameters:
-	// 	r.Get("/{articleSlug:[a-z-]+}", getArticleBySlug) // GET /articles/home-is-toronto
-
-	// 	// Subrouters:
-	// 	r.Route("/{articleID}", func(r chi.Router) {
-	// 		r.Use(ArticleCtx)
-	// 		r.Get("/", getArticle)       // GET /articles/123
-	// 		r.Put("/", updateArticle)    // PUT /articles/123
-	// 		r.Delete("/", deleteArticle) // DELETE /articles/123
-	// 	})
-	// })
-	srv := &http.Server{Addr: ":3000", Handler: r}
+func New(ctx context.Context, repo ExpenseRepository) (Service, error) {
+	srv := &http.Server{
+		Addr:    ":3000",
+		Handler: createHandler(ctx, repo),
+	}
 	return &service{
 		srv: srv,
 	}, nil
@@ -119,6 +141,65 @@ func (s *service) Start(ctx context.Context) {
 			log.Ctx(ctx).Fatal().Msgf("error on start rest service: %v", err)
 		}
 	}()
+}
+
+func createHandler(ctx context.Context, repo ExpenseRepository) http.Handler {
+	// l := log.Ctx(ctx)
+	r := chi.NewRouter()
+	// r.Use(middleware.RequestID)
+	// r.Use(LogHandler(l))
+	// r.Use(middleware.RealIP)
+	// r.Use(middleware.Logger)
+	// r.Use(middleware.Recoverer)
+	// r.Use(middleware.Timeout(60 * time.Second))
+
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		l := log.Ctx(r.Context())
+		w.Write([]byte("hi"))
+		l.Info().Msgf("hello")
+	})
+
+	// // RESTy routes for "articles" resource
+	r.Route("/expense", func(r chi.Router) {
+		// 	r.With(paginate).Get("/", listArticles)                           // GET /articles
+		// 	r.With(paginate).Get("/{month}-{day}-{year}", listArticlesByDate) // GET /articles/01-16-2017
+
+		// 	r.Post("/", createArticle)       // POST /articles
+		// 	r.Get("/search", searchArticles) // GET /articles/search
+
+		// 	// Regexp url parameters:
+		// 	r.Get("/{articleSlug:[a-z-]+}", getArticleBySlug) // GET /articles/home-is-toronto
+
+		// 	// Subrouters:
+		r.Route("/{expenseID}", func(r chi.Router) {
+			// 		r.Use(ArticleCtx)
+			r.Get("/", getExpenseHandler(repo)) // GET /articles/123
+			// 		r.Put("/", updateArticle)    // PUT /articles/123
+			// 		r.Delete("/", deleteArticle) // DELETE /articles/123
+		})
+	})
+	return r
+}
+
+func getExpenseHandler(repo ExpenseRepository) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		expenseID := chi.URLParam(r, "expenseID")
+		expense, err := repo.Get(ctx, expenseID)
+		if err != nil {
+			fmt.Fprintf(w, "%v", err)
+			// w.Write([]byte(fmt.err))
+			// http.Error(w, http.StatusText(422), 422)
+
+			return
+		}
+		err = json.NewEncoder(w).Encode(NewExpenseRestFromExpense(expense))
+		if err != nil {
+			fmt.Fprintf(w, "%v", err)
+			// http.Error(w, http.StatusText(422), 422)
+			return
+		}
+	}
 }
 
 func (s *service) Stop(ctx context.Context) error {

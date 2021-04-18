@@ -27,7 +27,7 @@ func main() {
 	// fatalOnError(err, "error on database connect")
 
 	repo := postgres.NewExpenseRepository(db)
-	restService, err := rest.New(repo, ctx)
+	restService, err := rest.New(ctx, repo)
 	fatalOnError(l, err, "error on create rest service")
 
 	restService.Start(ctx)
