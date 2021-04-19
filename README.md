@@ -5,19 +5,32 @@
 [![GoDoc](https://godoc.org/github.com/little-bird-finance/backendgo-test?status.svg)](https://pkg.go.dev/github.com/little-bird-finance/backend?tab=doc)
 
 
+
+# It's in early stages of development
+
+# Backend
+
+Backend it's a CRUD for a finance control system.
+Using just _builtin_ golang for this. 
+It's expose a REST API
+
+## Execute
+
+```bash
+make run
 ```
-build-all                     Cria o binário para várias plataformas
-build                         Cria o binário do projeto
-clean                         Clean up build files
-cover-browser                 Mostra o teste de cobertura no browser
-cover-file                    Cria o arquivo com o teste de cobertura
-cover-func                    Mostra o teste de cobertura por função
-cover                         Executa e mostra o teste de cobertura
-doc                           Sobe um server http na porta 8081 com o godoc, precisa ter instalado o go tools: go get -u golang.org/x/tools/...
-docker                        Cria uma imagem docker
-help                          Show help
-integration-test              Executa todos os testes com o scanapi
-protobuf                      make protobuf files 
-run                           Executa o código (sobe um server http)
-test                          Executa todos os testes unitários
+
+## Usage
+
+Consult expenses
+```httpie
+http :3000/expense/1
 ```
+
+## Contributing
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+Please make sure to update tests as appropriate.
+
+## License
+[GLP-3.0](https://choosealicense.com/licenses/gpl-3.0)
