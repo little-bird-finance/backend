@@ -71,6 +71,9 @@ docker: ## Cria uma imagem docker
 	docker build .
 #go test -run=.*/trailing -v
 
+fmt:
+	gofmt -s -w .
+
 # Integration tests create bin and not run
 # go test -tags integration -c ./testing/integration/...
 
