@@ -151,7 +151,7 @@ func TestGetExpense(t *testing.T) {
 			id:         "5",
 			wantStatus: 500,
 			wantResult: []byte("{}"),
-			mockErr: errors.New("unknown error"),
+			mockErr:    errors.New("unknown error"),
 		},
 	}
 
@@ -179,7 +179,6 @@ func TestGetExpense(t *testing.T) {
 			}
 
 			assert.Equal(t, res.Header.Get("content-type"), "application/json")
-			
 
 			if !tc.handlerError {
 				mockedExpense.AssertExpectations(t)

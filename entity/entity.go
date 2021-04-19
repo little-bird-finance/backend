@@ -98,8 +98,6 @@ type Expense struct {
 	What   string
 }
 
-
-
 type UpdateExpenseFunc func(*Expense) error
 
 type TagAction int
