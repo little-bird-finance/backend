@@ -146,12 +146,14 @@ func (s *service) Start(ctx context.Context) {
 func createHandler(ctx context.Context, repo ExpenseRepository) http.Handler {
 	// l := log.Ctx(ctx)
 	r := chi.NewRouter()
+	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 	// r.Use(middleware.RequestID)
 	// r.Use(LogHandler(l))
 	// r.Use(middleware.RealIP)
 	// r.Use(middleware.Logger)
 	// r.Use(middleware.Recoverer)
 	// r.Use(middleware.Timeout(60 * time.Second))
+	r.NotFound(http.HandlerFunc(notFoundHandler))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		l := log.Ctx(r.Context())
@@ -181,16 +183,90 @@ func createHandler(ctx context.Context, repo ExpenseRepository) http.Handler {
 	return r
 }
 
+type Error struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+func NewError(code, message string) Error {
+	return Error{
+		Code:    code,
+		Message: message,
+	}
+}
+
+func (h Error) Error() string {
+	return fmt.Sprintf("%s: %s", h.Code, h.Message)
+}
+
+type HttpError struct {
+	StatusCode    int
+	StatusMessage string
+	Detail        Error
+}
+
+func NewHttpError(code int, msg string, detail Error) HttpError {
+	if code == 0 {
+		code = http.StatusInternalServerError
+	}
+	if msg == "" {
+		msg = http.StatusText(code)
+	}
+	return HttpError{
+		StatusCode:    code,
+		StatusMessage: msg,
+		Detail:        detail,
+	}
+}
+
+func (h HttpError) Error() string {
+	return fmt.Sprintf(
+		"[%d] %s %q",
+		h.StatusCode,
+		h.StatusMessage,
+		h.Detail.Error(),
+	)
+}
+
+func fillHttpError(w http.ResponseWriter, err error) bool {
+	if err != nil {
+		var httpError HttpError
+		if errors.As(err, &httpError) {
+			w.WriteHeader(httpError.StatusCode)
+			err := json.NewEncoder(w).Encode(httpError.Detail)
+			if err != nil {
+				panic(err)
+			}
+
+		}
+		return true
+	}
+	return false
+}
+
+func notFoundHandler(w http.ResponseWriter, r *http.Request) {
+	fillHttpError(w,
+		NewHttpError(http.StatusNotFound, "",
+			NewError("URL_NOT_FOUND", fmt.Sprintf("URL '%s' not found", r.URL.String())),
+		),
+	)
+}
+
 func getExpenseHandler(repo ExpenseRepository) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		expenseID := chi.URLParam(r, "expenseID")
 		expense, err := repo.Get(ctx, expenseID)
 		if err != nil {
-			fmt.Fprintf(w, "%v", err)
-			// w.Write([]byte(fmt.err))
-			// http.Error(w, http.StatusText(422), 422)
-
+			if err == entity.ErrNotFound {
+				fillHttpError(w, NewHttpError(http.StatusNotFound, "",
+					NewError("NOT_FOUND", fmt.Sprintf("expense '%s' not found", expenseID))),
+				)
+			} else {
+				fillHttpError(w, NewHttpError(0, "",
+					NewError("", ""),
+				))
+			}
 			return
 		}
 		err = json.NewEncoder(w).Encode(NewExpenseRestFromExpense(expense))

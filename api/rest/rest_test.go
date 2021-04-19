@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -76,15 +77,18 @@ func (m *mockExpenseRepo) Search(context.Context, *entity.ExpenseFilter) ([]enti
 }
 
 func TestGetExpense(t *testing.T) {
+
 	now := time.Now()
 	tests := map[string]struct {
-		id          string
-		mockExpense entity.Expense
-		mockErr     error
-		wantResult  []byte
+		id           string
+		mockExpense  entity.Expense
+		mockErr      error
+		handlerError bool
+		wantResult   []byte
+		wantStatus   int
 	}{
 		"success": {
-			id: "123456",
+			id: "1",
 			mockExpense: entity.Expense{
 				Id:     "1",
 				Amount: *big.NewRat(1, 2),
@@ -93,6 +97,7 @@ func TestGetExpense(t *testing.T) {
 				Where:  "my where",
 				Who:    "my who",
 			},
+			wantStatus: 200,
 			wantResult: []byte(`{
 				"id":     "1",
 				"amount": "0.50",
@@ -108,6 +113,7 @@ func TestGetExpense(t *testing.T) {
 				Id:     "2",
 				Amount: *big.NewRat(2, 3),
 			},
+			wantStatus: 200,
 			wantResult: []byte(`{
 				"id":     "2",
 				"amount": "0.67"
@@ -116,11 +122,36 @@ func TestGetExpense(t *testing.T) {
 		"success id": {
 			id: "3",
 			mockExpense: entity.Expense{
-				Id:     "3",
+				Id: "3",
 			},
+			wantStatus: 200,
 			wantResult: []byte(`{
 				"id":     "3"
 			}`),
+		},
+		"empty": {
+			id:         "",
+			wantStatus: 404,
+			wantResult: []byte(`{
+				"code":     "URL_NOT_FOUND",
+				"message": "URL '/expense/' not found"
+			}`),
+			handlerError: true,
+		},
+		"expense not found": {
+			id:         "4",
+			wantStatus: 404,
+			wantResult: []byte(`{
+				"code":     "NOT_FOUND",
+				"message": "expense '4' not found"
+			}`),
+			mockErr: entity.ErrNotFound,
+		},
+		"unknown error": {
+			id:         "5",
+			wantStatus: 500,
+			wantResult: []byte("{}"),
+			mockErr: errors.New("unknown error"),
 		},
 	}
 
@@ -139,12 +170,20 @@ func TestGetExpense(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			assert.Equal(t, tc.wantStatus, res.StatusCode)
+
 			got, err := io.ReadAll(res.Body)
 			res.Body.Close()
 			if err != nil {
 				t.Fatal(err)
 			}
 
+			assert.Equal(t, res.Header.Get("content-type"), "application/json")
+			
+
+			if !tc.handlerError {
+				mockedExpense.AssertExpectations(t)
+			}
 			assert.JSONEq(t, string(tc.wantResult), string(got))
 
 		})

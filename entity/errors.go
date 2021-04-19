@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+var ErrNotFound = errors.New("not found")
+
 func NewFieldError(err error, field, code, description string) FieldError {
 	return FieldError{
 		field:       field,
