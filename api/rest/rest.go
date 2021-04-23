@@ -126,13 +126,6 @@ func createHandler(ctx context.Context, repo ExpenseRepository) http.Handler {
 	l := log.Ctx(ctx)
 	r := chi.NewRouter()
 
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		l := log.Ctx(r.Context())
-		w.Write([]byte("hi"))
-		l.Info().Msgf("hello")
-	})
-
-	// // RESTy routes for "articles" resource
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.SetHeader("Content-Type", "application/json"))
 		r.Use(TraceID)

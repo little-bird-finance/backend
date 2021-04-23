@@ -237,6 +237,17 @@ func TestCreateExpense(t *testing.T) {
 				"message": "invalid json"
 			}`),
 		},
+		"bad request invalid amount": {
+			id:         "3",
+			sent: []byte(`{
+				"amount": "2,3"
+			}`),
+			wantStatus: 400,
+			wantResult: []byte(`{
+				"code": "INVALID_REQUEST",
+				"message": "invalid json"
+			}`),
+		},
 		"unknown error": {
 			id:       "5",
 			callMock: true,
