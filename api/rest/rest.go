@@ -41,11 +41,11 @@ func (a amountRest) MarshalJSON() ([]byte, error) {
 }
 
 func (a *amountRest) UnmarshalJSON(data []byte) (err error) {
-	v, err := strconv.ParseFloat(string(data[1:len(data)-1]), 10)
+	v, err := strconv.ParseFloat(string(data[1:len(data)-1]), 64)
 	if err != nil {
 		return err
 	}
-	a.value = int64(v * 100)
+	a.value = int64(math.Round(v * 100))
 	return nil
 }
 
@@ -240,8 +240,13 @@ func createExpense(repo ExpenseRepository) func(w http.ResponseWriter, r *http.R
 		ctx := r.Context()
 		expense := new(ExpenseRest)
 		err := json.NewDecoder(r.Body).Decode(expense)
-		if validateError(w, err) {
+		if err != nil {
 			log.Ctx(ctx).Err(err).Msg("error on decode")
+			fillHttpError(w,
+				NewHttpError(http.StatusBadRequest, "",
+					NewError("INVALID_REQUEST", "invalid json"),
+				),
+			)
 			return
 		}
 		id, err := repo.Create(ctx, expense.ToExpense())

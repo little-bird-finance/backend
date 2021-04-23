@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -172,6 +173,113 @@ func TestGetExpense(t *testing.T) {
 
 			if !tc.handlerError {
 				mockedExpense.AssertExpectations(t)
+			}
+			assert.JSONEq(t, string(tc.wantResult), string(got))
+
+		})
+	}
+}
+
+func TestCreateExpense(t *testing.T) {
+	now := time.Now()
+	tests := map[string]struct {
+		id           string
+		sent         []byte
+		mockExpense  entity.Expense
+		mockErr      error
+		handlerError bool
+		wantResult   []byte
+		wantStatus   int
+		callMock     bool
+	}{
+		"success": {
+			id:       "1",
+			callMock: true,
+			sent: []byte(`{
+				"amount": "1.20",
+				"what":   "my what",
+				"when": "` + now.Format(time.RFC3339Nano) + `",
+				"where": "my where",
+				"who": "my who"
+			}`),
+			mockExpense: entity.Expense{
+				Amount: 120,
+				What:   "my what",
+				When:   now.UTC(),
+				Where:  "my where",
+				Who:    "my who",
+			},
+			wantStatus: 200,
+			wantResult: []byte(`{
+				"id":     "1"
+			}`),
+		},
+		"success amount": {
+			id:       "2",
+			callMock: true,
+			sent: []byte(`{
+				"amount": "2.3"
+			}`),
+			mockExpense: entity.Expense{
+				Amount: 230,
+			},
+			wantStatus: 200,
+			wantResult: []byte(`{
+				"id":     "2"
+			}`),
+		},
+		"bad request": {
+			id:         "3",
+			sent:       []byte(`{"invalid message"}`),
+			wantStatus: 400,
+			wantResult: []byte(`{
+				"code": "INVALID_REQUEST",
+				"message": "invalid json"
+			}`),
+		},
+		"unknown error": {
+			id:       "5",
+			callMock: true,
+			sent: []byte(`{
+				"amount": "2.3"
+			}`),
+			mockExpense: entity.Expense{
+				Amount: 230,
+			},
+			wantStatus: 500,
+			wantResult: []byte("{}"),
+			mockErr: errors.New("unknown error"),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			mockedRepo := new(mockExpenseRepo)
+			if tc.callMock {
+				mockedRepo.
+					On("Create", mock.Anything, tc.mockExpense).
+					Return(tc.id, tc.mockErr)
+			}
+			ctx := context.Background()
+			ts := httptest.NewServer(createHandler(ctx, mockedRepo))
+			defer ts.Close()
+
+			res, err := http.Post(ts.URL+"/api/expense", "application/json", bytes.NewBuffer(tc.sent))
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, tc.wantStatus, res.StatusCode)
+
+			got, err := io.ReadAll(res.Body)
+			res.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			assert.Equal(t, res.Header.Get("content-type"), "application/json")
+
+			if !tc.handlerError {
+				mockedRepo.AssertExpectations(t)
 			}
 			assert.JSONEq(t, string(tc.wantResult), string(got))
 
