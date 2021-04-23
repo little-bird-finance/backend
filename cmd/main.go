@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/axpira/backend/api/rest"
 	"github.com/axpira/backend/infrastructure/repository/postgres"
 	"github.com/rs/zerolog"
@@ -20,13 +19,8 @@ func main() {
 		Logger()
 	ctx = l.WithContext(ctx)
 
-	db, _, err := sqlmock.New()
-	fatalOnError(l, err, "error on database connect")
-
-	// db, err := sql.Open("driver-name", "database=test1")
-	// fatalOnError(err, "error on database connect")
-
-	repo := postgres.NewExpenseRepository(db)
+	repo, err := postgres.NewExpenseRepository()
+	fatalOnError(l, err, "error on create repository")
 	restService, err := rest.New(ctx, repo)
 	fatalOnError(l, err, "error on create rest service")
 

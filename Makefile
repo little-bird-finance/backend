@@ -1,29 +1,28 @@
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := all
 
 .PHONY: help run test cover test-integration test-unit docker-integration-start docker-integration-stop watch-test
 
-PROTOS_SRC          := $(wildcard entity/*.proto)
-PROTOS_BIN          := $(PROTOS_SRC:.proto=.pb.go)
-BIN_PATH            := bin
+# PROTOS_SRC          := $(wildcard entity/*.proto)
+# PROTOS_BIN          := $(PROTOS_SRC:.proto=.pb.go)
+BIN_PATH            := dist
 COVER_FILE_PATH     := $(BIN_PATH)/coverage.out
 SCANAPI_REPORT_PATH := $(BIN_PATH)/scanapi-report.html
 DOC_ADDR            := :8081
 TESTS_PATH          := ./...
 
+all: cover-file test-unit build
+
 help:  ## Show help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-all:
-	echo "'$(PROTOS_SRC)' '$(PROTOS_BIN)'"
+# protobuf: $(PROTOS_BIN) ## make protobuf files 
 
-protobuf: $(PROTOS_BIN) ## make protobuf files 
-
-$(PROTOS_BIN): $(PROTOS_SRC)
-	protoc --experimental_allow_proto3_optional -I=entity --go_out=entity $(@:.pb.go=.proto)
+# $(PROTOS_BIN): $(PROTOS_SRC)
+# 	protoc --experimental_allow_proto3_optional -I=entity --go_out=entity $(@:.pb.go=.proto)
 
 clean: ## Clean up build files
-	rm -rf bin
-	rm -f $(PROTOS_BIN)
+	rm -rf dist
+	#rm -f $(PROTOS_BIN)
 
 $(BIN_PATH):
 	mkdir -p $(BIN_PATH)
@@ -32,46 +31,48 @@ $(COVER_FILE_PATH): $(BIN_PATH)
 	go test -coverprofile=$(COVER_FILE_PATH) $(TESTS_PATH)
 
 $(SCANAPI_REPORT_PATH): $(BIN_PATH)
-	scanapi run -o $(SCANAPI_REPORT_PATH) scanapi.yaml
+	scanapi run -o $(SCANAPI_REPORT_PATH) ops/scanapi/scanapi.yml
 
-cover:  ## Executa e mostra o teste de cobertura
+cover:  ## Run coverage tests
 	go test -cover $(TESTS_PATH)
 	
-cover-func: $(COVER_FILE_PATH)  ## Mostra o teste de cobertura por função
+cover-func: $(COVER_FILE_PATH)  ## Run coverage tests by function
 	go tool cover -func=$(COVER_FILE_PATH)
 
-cover-file: $(COVER_FILE_PATH) ## Cria o arquivo com o teste de cobertura
+cover-file: $(COVER_FILE_PATH) ## Create a file with coverage test
 
-cover-browser: cover-file ## Mostra o teste de cobertura no browser
+cover-browser: cover-file ## Show coverage test in a browser
 	go tool cover -html=$(COVER_FILE_PATH)
 
-test: ## Executa todos os testes unitários
+test-unit: ## Run all unit tests
 	go test $(TESTS_PATH)
 
-integration-test: ## Executa todos os testes com o scanapi
-	go test -tags integration ./...
+# test-integration: ## 
+# 	go test -tags integration ./...
 
-run: ## Executa o código (sobe um server http)
+test-scanapi: $(SCANAPI_REPORT_PATH) ## Run all integration tests with scanapi
+
+run: ## Start a http server
 	go run cmd/main.go
 
-doc: ## Sobe um server http na porta 8081 com o godoc, precisa ter instalado o go tools: go get -u golang.org/x/tools/...
+doc: ## Start a go doc server, need to have installed go tools: go get -u golang.org/x/tools/...
 	godoc -http $(DOC_ADDR)
 
-build: $(BIN_PATH) ## Cria o binário do projeto
-	go build -o $(BIN_PATH)/main api/main.go
+build: $(BIN_PATH) ## Create a binary
+	go build -o $(BIN_PATH)/backend cmd/main.go
 
-build-all: $(BIN_PATH) ## Cria o binário para várias plataformas
+build-all: $(BIN_PATH) ## Create a binary for each platform
 	echo "Compiling for every OS and Platform"
-	GOOS=linux GOARCH=arm go build -o $(BIN_PATH)/luizalabs-linux-arm api/main.go
-	GOOS=linux GOARCH=arm64 go build -o $(BIN_PATH)/luizalabs-linux-arm64 api/main.go
-	GOOS=linux GOARCH=amd64 go build -o $(BIN_PATH)/luizalabs-linux-amd64 api/main.go
-	GOOS=windows GOARCH=amd64 go build -o $(BIN_PATH)/luizalabs-windows-amd64 api/main.go
+	GOOS=linux GOARCH=arm go build -o $(BIN_PATH)/backend-linux-arm cmd/main.go
+	GOOS=linux GOARCH=arm64 go build -o $(BIN_PATH)/backend-linux-arm64 cmd/main.go
+	GOOS=linux GOARCH=amd64 go build -o $(BIN_PATH)/backend-linux-amd64 cmd/main.go
+	GOOS=windows GOARCH=amd64 go build -o $(BIN_PATH)/backend-windows-amd64 cmd/main.go
 
-docker: ## Cria uma imagem docker
-	docker build .
-#go test -run=.*/trailing -v
+# docker: ## Cria uma imagem docker
+# 	docker build .
+# #go test -run=.*/trailing -v
 
-fmt:
+fmt: ## Format all code with gofmt
 	gofmt -s -w .
 
 # Integration tests create bin and not run

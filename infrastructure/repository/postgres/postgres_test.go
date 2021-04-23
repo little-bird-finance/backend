@@ -6,22 +6,20 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
-	"strings"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/axpira/backend/entity"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/oklog/ulid/v2"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
-
-	// "github.com/stretchr/testify/mock"
-	"github.com/DATA-DOG/go-sqlmock"
 )
 
 var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -56,7 +54,7 @@ func (a anyULID) Match(v driver.Value) bool {
 func newRandomExpense() entity.Expense {
 	return entity.Expense{
 		Id:     String(36),
-		Amount: *big.NewRat(12, 34),
+		Amount: 1234,
 		When:   time.Now().Add(-time.Duration(seededRand.Intn(3600)) * time.Second).UTC(),
 		Where:  String(5),
 		Who:    String(5),
@@ -65,6 +63,12 @@ func newRandomExpense() entity.Expense {
 }
 
 func TestCreate(t *testing.T) {
+	l := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().
+		Timestamp().
+		Caller().
+		Str("service", "backend").
+		Logger()
+	ctx := l.WithContext(context.Background())
 	repoErr := expenseRepository{entropy: bytes.NewReader([]byte(""))}
 	id, err := repoErr.Create(context.Background(), entity.Expense{})
 	assert.Error(t, err, "must return error on invalid ULID")
@@ -75,54 +79,61 @@ func TestCreate(t *testing.T) {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
 	defer db.Close()
-	repo := NewExpenseRepository(db)
 
 	tests := map[string]struct {
-		expense entity.Expense
-		args    []driver.Value
-		wantErr error
-		mockErr error
+		expense   entity.Expense
+		args      []driver.Value
+		wantQuery string
+		wantErr   error
+		mockErr   error
 	}{
 		"must execute the insert query with all named args": {
-			expense: newRandomExpense(),
+			expense:   newRandomExpense(),
+			wantQuery: "INSERT INTO tb_expense \\(amount,timestamp,place,who,what,id,createdAt,updatedAt\\) VALUES \\( \\$1, \\$2, \\$3, \\$4, \\$5, \\$6, \\$7, \\$8\\);",
 		},
 		"must execute the insert query with just field sent": {
 			expense: entity.Expense{
-				Amount: *big.NewRat(1, 2),
+				Amount: 120,
 			},
+			wantQuery: "INSERT INTO tb_expense \\(amount,id,createdAt,updatedAt\\) VALUES \\( \\$1, \\$2, \\$3, \\$4\\);",
 			args: []driver.Value{
-				sql.Named("amount", bigRatAdapter{*big.NewRat(1, 2)}),
+				sql.Named("amount", sql.NullInt64{120, true}),
 				anyULID{},
 				timeMatch{time.Now().UTC()},
 				timeMatch{time.Now().UTC()},
 			},
 		},
 		"must return error on database error ": {
-			expense: newRandomExpense(),
-			wantErr: ErrUnknown,
-			mockErr: errors.New(String(10)),
+			expense:   newRandomExpense(),
+			wantQuery: "INSERT INTO tb_expense \\(amount,timestamp,place,who,what,id,createdAt,updatedAt\\) VALUES \\( \\$1, \\$2, \\$3, \\$4, \\$5, \\$6, \\$7, \\$8\\);",
+			wantErr:   ErrUnknown,
+			mockErr:   errors.New(String(10)),
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			args := tc.args
 			if args == nil {
-				args = append(args, sql.Named("amount", bigRatAdapter{tc.expense.Amount}))
-				args = append(args, sql.Named("when", tc.expense.When))
-				args = append(args, sql.Named("where", tc.expense.Where))
-				args = append(args, sql.Named("who", tc.expense.Who))
-				args = append(args, sql.Named("what", tc.expense.What))
+				args = append(args, sql.Named("amount", sql.NullInt64{tc.expense.Amount, true}))
+				args = append(args, sql.Named("timestamp", sql.NullTime{tc.expense.When, true}))
+				args = append(args, sql.Named("place", sql.NullString{tc.expense.Where, true}))
+				args = append(args, sql.Named("who", sql.NullString{tc.expense.Who, true}))
+				args = append(args, sql.Named("what", sql.NullString{tc.expense.What, true}))
 				args = append(args, anyULID{})
 				args = append(args, timeMatch{time.Now().UTC()})
 				args = append(args, timeMatch{time.Now().UTC()})
 			}
 			mock.
-				ExpectExec("INSERT INTO expense (.*) VALUES (.+);").
+				ExpectExec(tc.wantQuery).
 				WithArgs(args...).
 				WillReturnError(tc.mockErr).
 				WillReturnResult(sqlmock.NewResult(1, 1))
+			repo := expenseRepository{
+				db:      db,
+				entropy: defaultEntropy(),
+			}
 
-			_, gotErr := repo.Create(context.Background(), tc.expense)
+			_, gotErr := repo.Create(ctx, tc.expense)
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Errorf("unmet expectation error: %s", err)
 			}
@@ -137,64 +148,78 @@ func TestCreate(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	l := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().
+		Timestamp().
+		Caller().
+		Str("service", "backend-test").
+		Logger()
+	ctx := l.WithContext(context.Background())
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("an error %q was not expected when opening a stub database connection", err)
 	}
 	defer db.Close()
-	repo := NewExpenseRepository(db)
+	repo := expenseRepository{
+		db:      db,
+		entropy: defaultEntropy(),
+	}
 
-	err = repo.Update(context.Background(), entity.Expense{})
+	err = repo.Update(ctx, entity.Expense{})
 	if err == nil {
 		t.Errorf("must return error on empty id")
 	}
 	tests := map[string]struct {
-		// methods   []string
-		// wantQuery string
-		expense entity.Expense
-		args    []driver.Value
-		wantErr error
-		mockErr error
+		expense   entity.Expense
+		wantQuery string
+		args      []driver.Value
+		wantErr   error
+		mockErr   error
 	}{
 		"must execute the update query with all named args": {
-			expense: newRandomExpense(),
+			expense:   newRandomExpense(),
+			wantQuery: "UPDATE tb_expense SET amount = \\$2 , timestamp = \\$3 , place = \\$4 , who = \\$5 , what = \\$6 , updatedAt = \\$7 WHERE id = \\$1;",
 		},
 		"must execute the update query with just field sent": {
 			expense: entity.Expense{
 				Id:     "123456",
-				Amount: *big.NewRat(1, 2),
+				Amount: 120,
 			},
+			wantQuery: "UPDATE tb_expense SET amount = \\$2 , updatedAt = \\$3 WHERE id = \\$1;",
 			args: []driver.Value{
-				sql.Named("amount", bigRatAdapter{*big.NewRat(1, 2)}),
 				sql.Named("id", "123456"),
+				sql.Named("amount", sql.NullInt64{120, true}),
 				timeMatch{time.Now().UTC()},
 			},
 		},
 		"must return error on database error ": {
-			expense: newRandomExpense(),
-			wantErr: ErrUnknown,
-			mockErr: errors.New(String(10)),
+			expense:   newRandomExpense(),
+			wantQuery: "UPDATE tb_expense SET amount = \\$2 , timestamp = \\$3 , place = \\$4 , who = \\$5 , what = \\$6 , updatedAt = \\$7 WHERE id = \\$1;",
+			wantErr:   ErrUnknown,
+			mockErr:   errors.New(String(10)),
 		},
 	}
+
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			args := tc.args
 			if args == nil {
-				args = append(args, sql.Named("amount", bigRatAdapter{tc.expense.Amount}))
-				args = append(args, sql.Named("when", tc.expense.When))
-				args = append(args, sql.Named("where", tc.expense.Where))
-				args = append(args, sql.Named("who", tc.expense.Who))
-				args = append(args, sql.Named("what", tc.expense.What))
 				args = append(args, sql.Named("id", tc.expense.Id))
+				args = append(args, sql.Named("amount", sql.NullInt64{tc.expense.Amount, true}))
+				args = append(args, sql.Named("timestamp", sql.NullTime{tc.expense.When, true}))
+				args = append(args, sql.Named("place", sql.NullString{tc.expense.Where, true}))
+				args = append(args, sql.Named("who", sql.NullString{tc.expense.Who, true}))
+				args = append(args, sql.Named("what", sql.NullString{tc.expense.What, true}))
 				args = append(args, timeMatch{time.Now().UTC()})
 			}
 			mock.
-				ExpectExec("UPDATE expense SET (.+) WHERE id = @id;").
+				ExpectExec(tc.wantQuery).
 				WithArgs(args...).
 				WillReturnError(tc.mockErr).
 				WillReturnResult(sqlmock.NewResult(1, 1))
+			repo.Update(ctx, tc.expense)
 
-			gotErr := repo.Update(context.Background(), tc.expense)
+			gotErr := repo.Update(ctx, tc.expense)
+			// db.AssertExpectations(t)
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Errorf("unmet expectation error: %s", err)
 			}
@@ -214,42 +239,58 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
 	defer db.Close()
-	repo := NewExpenseRepository(db)
+	l := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().
+		Timestamp().
+		Caller().
+		Str("service", "backend-test").
+		Logger()
+	ctx := l.WithContext(context.Background())
+	repo := expenseRepository{
+		db:      db,
+		entropy: defaultEntropy(),
+	}
 
-	err = repo.Delete(context.Background(), "")
+	err = repo.Delete(ctx, "")
 	if err == nil {
 		t.Errorf("must return error on empty id")
 	}
 
 	tests := map[string]struct {
-		id      string
-		wantErr bool
-		mockErr error
+		id        string
+		wantQuery string
+		wantErr   error
+		mockErr   error
 	}{
 		"must execute the delete": {
-			id: String(36),
+			id:        String(36),
+			wantQuery: "DELETE FROM tb_expense WHERE id = \\$1;",
 		},
 		"must return error on database error ": {
-			id:      String(36),
-			wantErr: true,
-			mockErr: errors.New(String(10)),
+			id:        String(36),
+			wantQuery: "DELETE FROM tb_expense WHERE id = \\$1;",
+			wantErr:   entity.ErrUnknown,
+			mockErr:   errors.New(String(10)),
+		},
+		"must return not found error on database NoRows": {
+			id:        String(36),
+			wantQuery: "DELETE FROM tb_expense WHERE id = \\$1;",
+			wantErr:   entity.ErrNotFound,
+			mockErr:   sql.ErrNoRows,
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			mock.
-				ExpectExec("DELETE FROM expense WHERE id = @id").
+				ExpectExec(tc.wantQuery).
 				WithArgs(tc.id).
 				WillReturnError(tc.mockErr).
 				WillReturnResult(sqlmock.NewResult(1, 1))
-
-			gotErr := repo.Delete(context.Background(), tc.id)
+			gotErr := repo.Delete(ctx, tc.id)
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Errorf("unmet expectation error: %s", err)
 			}
-
-			if tc.wantErr {
-				assert.Error(t, gotErr)
+			if tc.wantErr != nil {
+				assert.ErrorIs(t, gotErr, tc.wantErr)
 			} else {
 				assert.NoError(t, gotErr)
 			}
@@ -263,21 +304,33 @@ func TestGet(t *testing.T) {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
 	defer db.Close()
-	repo := NewExpenseRepository(db)
+	l := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().
+		Timestamp().
+		Caller().
+		Str("service", "backend-test").
+		Logger()
+	ctx := l.WithContext(context.Background())
+	// db := new(mockDB)
+	repo := expenseRepository{
+		db:      db,
+		entropy: defaultEntropy(),
+	}
 
-	_, err = repo.Get(context.Background(), "")
+	_, err = repo.Get(ctx, "")
 	if err == nil {
 		t.Errorf("must return error on empty id")
 	}
 
 	tests := map[string]struct {
 		id          string
+		wantQuery   string
 		wantErr     error
 		mockErr     error
 		columns     []string
 		wantExpense entity.Expense
 	}{
 		"must execute the query": {
+			wantQuery:   "SELECT amount,timestamp,place,who,what FROM tb_expense WHERE id = \\$1;",
 			columns:     []string{"amount", "when", "where", "who", "what"},
 			id:          String(36),
 			wantExpense: newRandomExpense(),
@@ -285,23 +338,24 @@ func TestGet(t *testing.T) {
 		"must return error on database error ": {
 			columns: []string{"amount", "when", "where", "who", "what"},
 			id:      String(36),
-			wantErr: ErrUnknown,
+			wantErr: entity.ErrUnknown,
 			mockErr: errors.New(String(10)),
+		},
+		"must return error on not found": {
+			columns: []string{"amount", "when", "where", "who", "what"},
+			id:      String(36),
+			wantErr: entity.ErrNotFound,
+			mockErr: sql.ErrNoRows,
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			mock.
-				ExpectQuery(
-					fmt.Sprintf(
-						"SELECT %v FROM expense WHERE id = @id",
-						strings.Join(tc.columns, ","),
-					),
-				).
+				ExpectQuery(tc.wantQuery).
 				WithArgs(sql.Named("id", tc.id)).
 				WillReturnRows(
 					sqlmock.NewRows(tc.columns).AddRow(
-						bigRatAdapter{tc.wantExpense.Amount},
+						tc.wantExpense.Amount,
 						tc.wantExpense.When,
 						tc.wantExpense.Where,
 						tc.wantExpense.Who,
@@ -310,17 +364,21 @@ func TestGet(t *testing.T) {
 				).
 				WillReturnError(tc.mockErr)
 
-			gotExpense, gotErr := repo.Get(context.Background(), tc.id)
-			if err := mock.ExpectationsWereMet(); err != nil {
+			repo := expenseRepository{
+				db:      db,
+				entropy: defaultEntropy(),
+			}
+			gotExpense, gotErr := repo.Get(ctx, tc.id)
+
+			if err = mock.ExpectationsWereMet(); err != nil {
 				t.Errorf("unmet expectation error: %s", err)
 			}
 
 			if gotErr != nil {
-				if !errors.As(gotErr, &tc.wantErr) {
-					t.Errorf("want error %q and got %q", tc.wantErr, gotErr)
-				}
+				assert.ErrorIs(t, gotErr, tc.wantErr)
 			} else {
 				tc.wantExpense.Id = tc.id
+				assert.NoError(t, gotErr)
 			}
 
 			if diff := cmp.Diff(tc.wantExpense, gotExpense, cmpopts.IgnoreUnexported(big.Rat{}), cmpopts.IgnoreUnexported(entity.Tags{})); diff != "" {

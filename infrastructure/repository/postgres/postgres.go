@@ -3,25 +3,30 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/axpira/backend/entity"
+	_ "github.com/jackc/pgx/v4/stdlib"
+
+	// _ "github.com/lib/pq"
 	"github.com/oklog/ulid/v2"
+	"github.com/rs/zerolog/log"
 )
+
+const TABLE_NAME = "tb_expense"
 
 var (
 	ErrUnknown           = errors.New("uknown error")
 	expenseRowColumnsArr = []string{
 		"amount",
-		"when",
-		"where",
+		"timestamp",
+		"place",
 		"who",
 		"what",
 	}
@@ -30,22 +35,33 @@ var (
 
 type ExpenseRow struct {
 	Id     string
-	Amount bigRatAdapter
-	When   time.Time
-	Where  string
-	Who    string
-	What   string
+	Amount sql.NullInt64
+	When   sql.NullTime
+	Where  sql.NullString
+	Who    sql.NullString
+	What   sql.NullString
 }
 
 func NewExpenseRowFromExpense(e entity.Expense) ExpenseRow {
-	return ExpenseRow{
-		Id:     e.Id,
-		Amount: bigRatAdapter{e.Amount},
-		When:   e.When,
-		Where:  e.Where,
-		Who:    e.Who,
-		What:   e.What,
+	row := ExpenseRow{
+		Id: e.Id,
 	}
+	if e.Amount > 0 {
+		row.Amount = sql.NullInt64{Int64: e.Amount, Valid: true}
+	}
+	if !e.When.IsZero() {
+		row.When = sql.NullTime{Time: e.When, Valid: true}
+	}
+	if e.Where != "" {
+		row.Where = sql.NullString{String: e.Where, Valid: true}
+	}
+	if e.Who != "" {
+		row.Who = sql.NullString{String: e.Who, Valid: true}
+	}
+	if e.What != "" {
+		row.What = sql.NullString{String: e.What, Valid: true}
+	}
+	return row
 }
 
 func (e *ExpenseRow) Scan() []interface{} {
@@ -61,29 +77,29 @@ func (e *ExpenseRow) Scan() []interface{} {
 func (e ExpenseRow) ToExpense() (entity.Expense, error) {
 	expense := entity.Expense{}
 	expense.Id = e.Id
-	expense.Amount = e.Amount.Rat
-	expense.When = e.When
-	expense.Where = e.Where
-	expense.Who = e.Who
-	expense.What = e.What
+	expense.Amount = e.Amount.Int64
+	expense.When = e.When.Time.UTC()
+	expense.Where = e.Where.String
+	expense.Who = e.Who.String
+	expense.What = e.What.String
 	return expense, nil
 }
 
 func (e ExpenseRow) NamedArgs() []sql.NamedArg {
 	var args []sql.NamedArg
-	if e.Amount.Cmp(&big.Rat{}) != 0 {
+	if e.Amount.Valid {
 		args = append(args, sql.Named("amount", e.Amount))
 	}
-	if !e.When.IsZero() {
-		args = append(args, sql.Named("when", e.When))
+	if e.When.Valid {
+		args = append(args, sql.Named("timestamp", e.When))
 	}
-	if e.Where != "" {
-		args = append(args, sql.Named("where", e.Where))
+	if e.Where.Valid {
+		args = append(args, sql.Named("place", e.Where))
 	}
-	if e.Who != "" {
+	if e.Who.Valid {
 		args = append(args, sql.Named("who", e.Who))
 	}
-	if e.What != "" {
+	if e.What.Valid {
 		args = append(args, sql.Named("what", e.What))
 	}
 	return args
@@ -97,32 +113,36 @@ type Repository interface {
 	Search(context.Context, *entity.ExpenseFilter) ([]entity.Expense, error)
 }
 
+type DB interface {
+	ExecContext(_ context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args... interface{}) *sql.Row
+	QueryContext(ctx context.Context, query string, args... interface{}) (*sql.Rows, error)
+}
+
+
+
 type expenseRepository struct {
-	db      *sql.DB
+	db      DB
 	entropy io.Reader
 }
 
-func NewExpenseRepository(db *sql.DB) Repository {
-
+func NewExpenseRepository() (Repository, error) {
+	db, err := sql.Open("pgx", os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return nil, err
+	}
 	return expenseRepository{
 		db:      db,
-		entropy: ulid.Monotonic(rand.New(rand.NewSource(time.Now().Local().UnixNano())), 0),
-	}
+		entropy: defaultEntropy(),
+	}, nil
 }
 
-type bigRatAdapter struct {
-	big.Rat
-}
-
-func (b bigRatAdapter) Value() (driver.Value, error) {
-	return b.String(), nil
-}
-
-func (b *bigRatAdapter) Scan(value interface{}) error {
-	return nil
+func defaultEntropy() io.Reader {
+	return ulid.Monotonic(rand.New(rand.NewSource(time.Now().Local().UnixNano())), 0)
 }
 
 func (r expenseRepository) Create(ctx context.Context, expense entity.Expense) (string, error) {
+	l := log.Ctx(ctx)
 	id, err := ulid.New(ulid.Timestamp(time.Now().UTC()), r.entropy)
 	if err != nil {
 		return "", err
@@ -141,11 +161,19 @@ func (r expenseRepository) Create(ctx context.Context, expense entity.Expense) (
 	args := make([]interface{}, len(namedArgs))
 	for i, namedArg := range namedArgs {
 		keyStr.WriteString("," + namedArg.Name)
-		valueStr.WriteString(", @" + namedArg.Name)
+		// valueStr.WriteString(", @" + namedArg.Name)
+		valueStr.WriteString(fmt.Sprintf(", $%d", i+1))
 		args[i] = namedArg
 	}
 
-	query := fmt.Sprintf("INSERT INTO expense (%s) VALUES (%s);", keyStr.String()[1:], valueStr.String()[1:])
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);", TABLE_NAME, keyStr.String()[1:], valueStr.String()[1:])
+	if e := l.Debug(); e.Enabled() {
+		for i, a := range args {
+			n := a.(sql.NamedArg)
+			e = e.Str(fmt.Sprintf("param_%d_%s", i+1, n.Name), fmt.Sprintf("%v", n.Value))
+		}
+		e.Msgf("runing: %v", query)
+	}
 	_, err = r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrUnknown, err)
@@ -160,17 +188,26 @@ func (r expenseRepository) Update(ctx context.Context, expense entity.Expense) e
 	row := NewExpenseRowFromExpense(expense)
 	namedArgs := append(
 		row.NamedArgs(),
-		sql.Named("id", expense.Id),
 		sql.Named("updatedAt", time.Now().UTC()),
 	)
 	var fieldsStr strings.Builder
-	args := make([]interface{}, len(namedArgs))
+	args := make([]interface{}, len(namedArgs)+1)
+	args[0] = sql.Named("id", expense.Id)
 	for i, namedArg := range namedArgs {
-		fieldsStr.WriteString(fmt.Sprintf(", %s = @%s ", namedArg.Name, namedArg.Name))
-		args[i] = namedArg
+		fieldsStr.WriteString(fmt.Sprintf(", %s = $%d ", namedArg.Name, i+2))
+		args[i+1] = namedArg
 	}
 
-	query := fmt.Sprintf("UPDATE expense SET%sWHERE id = @id;", fieldsStr.String()[1:])
+	query := fmt.Sprintf("UPDATE %s SET%sWHERE id = $1;", TABLE_NAME, fieldsStr.String()[1:])
+	l := log.Ctx(ctx)
+	if e := l.Debug(); e.Enabled() {
+		for i, a := range args {
+			n := a.(sql.NamedArg)
+			e = e.Str(fmt.Sprintf("param_%d_%s", i+1, n.Name), fmt.Sprintf("%v", n.Value))
+		}
+		e.Msgf("runing: %v", query)
+	}
+	// l.Debug().Msgf("%+v", args)
 	_, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrUnknown, err)
@@ -184,29 +221,43 @@ func (r expenseRepository) Delete(ctx context.Context, id string) error {
 	}
 	_, err := r.db.ExecContext(
 		ctx,
-		"DELETE FROM expense WHERE id = @id;",
+		fmt.Sprintf("DELETE FROM %s WHERE id = $1;", TABLE_NAME),
 		sql.Named("id", id),
 	)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrUnknown, err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("id %s was %w", id, entity.ErrNotFound)
+		}
+		return fmt.Errorf("%w: %v", entity.ErrUnknown, err)
 	}
 	return nil
 }
 
 func (r expenseRepository) Get(ctx context.Context, id string) (entity.Expense, error) {
+	l := log.Ctx(ctx)
+	l.Info().Msgf("get %s", id)
 	if strings.TrimSpace(id) == "" {
 		return entity.Expense{}, entity.NewFieldError(nil, "id", "empty", "can't be empty")
 	}
 	row := ExpenseRow{
 		Id: id,
 	}
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE id = $1;", expenseRowColumns, TABLE_NAME)
+	l.Debug().Msgf("executing: %s", query)
+	if e := l.Debug(); e.Enabled() {
+		e.Str("param_1_id", fmt.Sprintf("%v", sql.Named("id", id))).Msgf("runing: %v", query)
+	}
 	err := r.db.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT %s FROM expense WHERE id = @id;", expenseRowColumns),
+		query,
 		sql.Named("id", id),
 	).Scan(row.Scan()...)
 	if err != nil {
-		return entity.Expense{}, err
+		if errors.Is(err, sql.ErrNoRows) {
+			return entity.Expense{}, fmt.Errorf("id %s was %w", id, entity.ErrNotFound)
+		}
+		return entity.Expense{}, fmt.Errorf("%w: %v", entity.ErrUnknown, err)
 	}
+	l.Debug().Msgf("%v", row)
 	return row.ToExpense()
 }
 

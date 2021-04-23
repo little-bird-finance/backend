@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -91,7 +90,7 @@ func TestGetExpense(t *testing.T) {
 			id: "1",
 			mockExpense: entity.Expense{
 				Id:     "1",
-				Amount: *big.NewRat(1, 2),
+				Amount: 120,
 				What:   "my what",
 				When:   now,
 				Where:  "my where",
@@ -100,7 +99,7 @@ func TestGetExpense(t *testing.T) {
 			wantStatus: 200,
 			wantResult: []byte(`{
 				"id":     "1",
-				"amount": "0.50",
+				"amount": "1.20",
 				"what":   "my what",
 				"when": "` + now.Format(time.RFC3339Nano) + `",
 				"where": "my where",
@@ -111,12 +110,12 @@ func TestGetExpense(t *testing.T) {
 			id: "2",
 			mockExpense: entity.Expense{
 				Id:     "2",
-				Amount: *big.NewRat(2, 3),
+				Amount: 230,
 			},
 			wantStatus: 200,
 			wantResult: []byte(`{
 				"id":     "2",
-				"amount": "0.67"
+				"amount": "2.30"
 			}`),
 		},
 		"success id": {
@@ -129,21 +128,12 @@ func TestGetExpense(t *testing.T) {
 				"id":     "3"
 			}`),
 		},
-		"empty": {
-			id:         "",
-			wantStatus: 404,
-			wantResult: []byte(`{
-				"code":     "URL_NOT_FOUND",
-				"message": "URL '/expense/' not found"
-			}`),
-			handlerError: true,
-		},
 		"expense not found": {
 			id:         "4",
 			wantStatus: 404,
 			wantResult: []byte(`{
 				"code":     "NOT_FOUND",
-				"message": "expense '4' not found"
+				"message": "expense not found"
 			}`),
 			mockErr: entity.ErrNotFound,
 		},
@@ -165,7 +155,7 @@ func TestGetExpense(t *testing.T) {
 			ts := httptest.NewServer(createHandler(ctx, mockedExpense))
 			defer ts.Close()
 
-			res, err := http.Get(ts.URL + "/expense/" + tc.id)
+			res, err := http.Get(ts.URL + "/api/expense/" + tc.id)
 			if err != nil {
 				t.Fatal(err)
 			}

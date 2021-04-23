@@ -5,7 +5,12 @@ import (
 	"fmt"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrUnknown  = errors.New("unknown error")
+	ErrBusiness = errors.New("")
+	ErrTechnical = errors.New("")
+	ErrNotFound = fmt.Errorf("%wnot found", ErrBusiness)
+)
 
 func NewFieldError(err error, field, code, description string) FieldError {
 	return FieldError{

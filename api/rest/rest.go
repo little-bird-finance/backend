@@ -5,42 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
+	"math"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/axpira/backend/entity"
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
-	"github.com/rs/zerolog"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog/log"
 )
-
-// import (
-// 	"encoding/json"
-// 	"github.com/axpira/backend/entity"
-// 	"google.golang.org/protobuf/encoding/protojson"
-// 	"log"
-// )
-
-// func main() {
-// 	log.Printf("Teste")
-// 	id, _ := entity.NewULID(0, entity.DefaultEntropy())
-// 	log.Printf("%v", id)
-
-// 	j, _ := protojson.Marshal(id)
-// 	log.Printf("%v", string(j))
-// 	j, _ = json.Marshal(id)
-// 	log.Printf("%v", string(j))
-
-// 	tmp := entity.ULID{}
-// 	j, _ = protojson.Marshal(&tmp)
-// 	log.Printf("%v", string(j))
-// 	j, _ = json.Marshal(&tmp)
-// 	log.Printf("%v", string(j))
-
-// }
 
 func NewRestTime(t time.Time) *time.Time {
 	if t.IsZero() {
@@ -50,24 +25,27 @@ func NewRestTime(t time.Time) *time.Time {
 }
 
 type amountRest struct {
-	big.Rat
+	value int64
 }
 
-func NewAmountRest(a big.Rat) *amountRest {
-	if f, _ := a.Float64(); f == 0 {
+func NewAmountRest(a int64) *amountRest {
+	if a == 0 {
 		return nil
 	}
 	return &amountRest{a}
+
 }
+
 func (a amountRest) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + a.FloatString(2) + `"`), nil
+	return []byte(fmt.Sprintf(`"%.02f"`, float64(a.value)*math.Pow10(-2))), nil
 }
+
 func (a *amountRest) UnmarshalJSON(data []byte) (err error) {
-	// Fractional seconds are handled implicitly by Parse.
-	_, ok := a.SetString(string(data))
-	if !ok {
-		return errors.New("error on parse amount")
+	v, err := strconv.ParseFloat(string(data[1:len(data)-1]), 10)
+	if err != nil {
+		return err
 	}
+	a.value = int64(v * 100)
 	return nil
 }
 
@@ -78,6 +56,22 @@ type ExpenseRest struct {
 	Where  string      `json:"where,omitempty"`
 	Who    string      `json:"who,omitempty"`
 	What   string      `json:"what,omitempty"`
+}
+
+func (e ExpenseRest) ToExpense() entity.Expense {
+	exp := entity.Expense{
+		Id:    e.Id,
+		Where: e.Where,
+		Who:   e.Who,
+		What:  e.What,
+	}
+	if e.Amount != nil {
+		exp.Amount = e.Amount.value
+	}
+	if e.When != nil {
+		exp.When = e.When.UTC()
+	}
+	return exp
 }
 
 func NewExpenseRestFromExpense(e entity.Expense) ExpenseRest {
@@ -110,21 +104,6 @@ type service struct {
 	wg  *sync.WaitGroup
 }
 
-func LogHandler(logger *zerolog.Logger) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		fn := func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-			l := logger.
-				With().
-				Str("request-id", middleware.GetReqID(ctx)).
-				Logger()
-			ctx = l.WithContext(ctx)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		}
-		return http.HandlerFunc(fn)
-	}
-}
-
 func New(ctx context.Context, repo ExpenseRepository) (Service, error) {
 	srv := &http.Server{
 		Addr:    ":3000",
@@ -144,16 +123,8 @@ func (s *service) Start(ctx context.Context) {
 }
 
 func createHandler(ctx context.Context, repo ExpenseRepository) http.Handler {
-	// l := log.Ctx(ctx)
+	l := log.Ctx(ctx)
 	r := chi.NewRouter()
-	r.Use(middleware.SetHeader("Content-Type", "application/json"))
-	// r.Use(middleware.RequestID)
-	// r.Use(LogHandler(l))
-	// r.Use(middleware.RealIP)
-	// r.Use(middleware.Logger)
-	// r.Use(middleware.Recoverer)
-	// r.Use(middleware.Timeout(60 * time.Second))
-	r.NotFound(http.HandlerFunc(notFoundHandler))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		l := log.Ctx(r.Context())
@@ -162,22 +133,18 @@ func createHandler(ctx context.Context, repo ExpenseRepository) http.Handler {
 	})
 
 	// // RESTy routes for "articles" resource
-	r.Route("/expense", func(r chi.Router) {
-		// 	r.With(paginate).Get("/", listArticles)                           // GET /articles
-		// 	r.With(paginate).Get("/{month}-{day}-{year}", listArticlesByDate) // GET /articles/01-16-2017
-
-		// 	r.Post("/", createArticle)       // POST /articles
-		// 	r.Get("/search", searchArticles) // GET /articles/search
-
-		// 	// Regexp url parameters:
-		// 	r.Get("/{articleSlug:[a-z-]+}", getArticleBySlug) // GET /articles/home-is-toronto
-
-		// 	// Subrouters:
-		r.Route("/{expenseID}", func(r chi.Router) {
-			// 		r.Use(ArticleCtx)
-			r.Get("/", getExpenseHandler(repo)) // GET /articles/123
-			// 		r.Put("/", updateArticle)    // PUT /articles/123
-			// 		r.Delete("/", deleteArticle) // DELETE /articles/123
+	r.Route("/api", func(r chi.Router) {
+		r.Use(middleware.SetHeader("Content-Type", "application/json"))
+		r.Use(TraceID)
+		r.Use(LogHandler(l))
+		r.Use(middleware.Timeout(60 * time.Second))
+		r.NotFound(http.HandlerFunc(notFoundHandler))
+		r.Route("/expense", func(r chi.Router) {
+			r.Post("/", createExpense(repo))
+			r.Route("/{expenseID}", func(r chi.Router) {
+				r.Get("/", getExpense(repo))
+				r.Delete("/", deleteExpense(repo))
+			})
 		})
 	})
 	return r
@@ -252,32 +219,66 @@ func notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-func getExpenseHandler(repo ExpenseRepository) func(w http.ResponseWriter, r *http.Request) {
+func validateError(w http.ResponseWriter, err error) bool {
+	if err != nil {
+		if errors.Is(err, entity.ErrNotFound) {
+			fillHttpError(w, NewHttpError(http.StatusNotFound, "",
+				NewError("NOT_FOUND", fmt.Sprintf("expense not found"))),
+			)
+		} else {
+			fillHttpError(w, NewHttpError(0, "",
+				NewError("", ""),
+			))
+		}
+		return true
+	}
+	return false
+}
+
+func createExpense(repo ExpenseRepository) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		expense := new(ExpenseRest)
+		err := json.NewDecoder(r.Body).Decode(expense)
+		if validateError(w, err) {
+			log.Ctx(ctx).Err(err).Msg("error on decode")
+			return
+		}
+		id, err := repo.Create(ctx, expense.ToExpense())
+		if validateError(w, err) {
+			log.Ctx(ctx).Err(err).Msg("error on create")
+			return
+		}
+		w.Write([]byte(`{"id":"` + id + `"}`))
+	}
+}
+func getExpense(repo ExpenseRepository) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		expenseID := chi.URLParam(r, "expenseID")
 		expense, err := repo.Get(ctx, expenseID)
-		if err != nil {
-			if err == entity.ErrNotFound {
-				fillHttpError(w, NewHttpError(http.StatusNotFound, "",
-					NewError("NOT_FOUND", fmt.Sprintf("expense '%s' not found", expenseID))),
-				)
-			} else {
-				fillHttpError(w, NewHttpError(0, "",
-					NewError("", ""),
-				))
-			}
+		if validateError(w, err) {
+			log.Ctx(ctx).Err(err).Msg("error on consult")
 			return
 		}
 		err = json.NewEncoder(w).Encode(NewExpenseRestFromExpense(expense))
-		if err != nil {
-			fmt.Fprintf(w, "%v", err)
-			// http.Error(w, http.StatusText(422), 422)
+		if validateError(w, err) {
 			return
 		}
 	}
 }
 
+func deleteExpense(repo ExpenseRepository) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		expenseID := chi.URLParam(r, "expenseID")
+		err := repo.Delete(ctx, expenseID)
+		if validateError(w, err) {
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
 func (s *service) Stop(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
 }
@@ -285,13 +286,3 @@ func (s *service) Stop(ctx context.Context) error {
 func (s *service) Status() error {
 	return nil
 }
-
-// func getExpense(w http.ResponseWriter, r *http.Request) {
-//   ctx := r.Context()
-//   article, ok := ctx.Value("article").(*Article)
-//   if !ok {
-//     http.Error(w, http.StatusText(422), 422)
-//     return
-//   }
-//   w.Write([]byte(fmt.Sprintf("title:%s", article.Title)))
-// }

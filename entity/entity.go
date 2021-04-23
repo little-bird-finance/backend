@@ -2,7 +2,6 @@ package entity
 
 import (
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 	// "github.com/google/uuid"
@@ -91,7 +90,7 @@ func (t Tags) String() string {
 
 type Expense struct {
 	Id     string
-	Amount big.Rat
+	Amount int64
 	When   time.Time
 	Where  string
 	Who    string

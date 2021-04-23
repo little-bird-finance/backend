@@ -1,0 +1,18 @@
+- name: must return a status code 200
+  assert: ${{ response.status_code == 200 }}
+- name: must returna Content-Type application/json
+  assert: ${{ response.headers["content-type"] == "application/json" }}
+- name: must return a Trace-ID
+  assert: ${{ response.headers["trace-id"] is not None }}
+- name: must return id
+  assert: ${{ response.json()["id"] == "${id}" }}
+- name: must return amount
+  assert: ${{ response.json()["amount"] == "${amount}" }}
+- name: must return what
+  assert: ${{ response.json()["what"] == "${what}" }}
+- name: must return what
+  assert: ${{ response.json()["what"] == "${what}" }}
+- name: must return when in UTC
+  assert: ${{ response.json()["when"] == "${whenUTC}" }}
+- name: must return who
+  assert: ${{ response.json()["who"] == "${who}" }}

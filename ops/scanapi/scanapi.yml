@@ -1,0 +1,64 @@
+endpoints:
+  - name: expenses
+    path: http://localhost:3000
+    endpoints:
+      - name: apis 
+        path: /api/expense
+        # delay: 1000
+        requests:
+           - name: Create new expense
+             method: post
+             vars:
+                id:  ${{response.json()["id"]}}
+                amount: "12.34"
+                what: "test what"
+                when: "2021-04-22T04:20:54.196373-03:00"
+                whenUTC: "2021-04-22T07:20:54.196373Z"
+                where: "test where"
+                who: "test who"
+                # amount: "${{'{:.2f}'.format(10*random.random())}}"
+                # what: "${{''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ') for x in range(12))}}"
+                # when: "${{datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%fZ')}}"
+                # where: "${{''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ') for x in range(12))}}"
+                # who: "${{''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ') for x in range(6))}}"
+             body:
+               amount: "${amount}"
+               what: "${what}"
+               when: "${when}"
+               where: "${where}"
+               who: "${who}"
+             tests:
+               - name: Status code deve ser 200
+                 assert: ${{ response.status_code == 200 }}
+               - name: Content-Type deve ser application/json
+                 assert: ${{ response.headers["content-type"] == "application/json" }}
+               - name: Trace-ID deve ser retornardo
+                 assert: ${{ response.headers["trace-id"] is not None }}
+               - name: must return expense id
+                 assert: ${{ response.json()["id"] != "" }}
+        endpoints:
+          - name: test consult and delete of created expense
+            path: /${id}
+            requests:
+              - name: Get expense
+                method: get
+                tests:
+                  !include assert_expense.yml
+              - name: Delete expense
+                method: delete
+                tests:
+                  - name: must return a status code 204
+                    assert: ${{ response.status_code == 204 }}
+                  - name: must returna Content-Type application/json
+                    assert: ${{ response.headers["content-type"] == "application/json" }}
+                  - name: must return a Trace-ID
+                    assert: ${{ response.headers["trace-id"] is not None }}
+              - name: Get expense
+                method: get
+                tests:
+                  - name: must return a status code 404
+                    assert: ${{ response.status_code == 404 }}
+                  - name: must returna Content-Type application/json
+                    assert: ${{ response.headers["content-type"] == "application/json" }}
+                  - name: must return a Trace-ID
+                    assert: ${{ response.headers["trace-id"] is not None }}
