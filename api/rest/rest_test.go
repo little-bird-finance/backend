@@ -248,7 +248,7 @@ func TestCreateExpense(t *testing.T) {
 			},
 			wantStatus: 500,
 			wantResult: []byte("{}"),
-			mockErr: errors.New("unknown error"),
+			mockErr:    errors.New("unknown error"),
 		},
 	}
 
@@ -282,6 +282,86 @@ func TestCreateExpense(t *testing.T) {
 				mockedRepo.AssertExpectations(t)
 			}
 			assert.JSONEq(t, string(tc.wantResult), string(got))
+
+		})
+	}
+}
+
+func TestDeleteExpense(t *testing.T) {
+	tests := map[string]struct {
+		id         string
+		mockErr    error
+		wantResult []byte
+		wantStatus int
+		callMock   bool
+	}{
+		"success": {
+			id:         "1",
+			callMock:   true,
+			wantStatus: 204,
+			wantResult: []byte(``),
+		},
+		"empty id": {
+			id:         "",
+			callMock:   false,
+			wantStatus: 405,
+			wantResult: []byte(``),
+		},
+		"unknown error": {
+			id:         "2",
+			callMock:   true,
+			wantStatus: 500,
+			wantResult: []byte("{}"),
+			mockErr:    errors.New("unknown error"),
+		},
+		"not found error": {
+			id:         "3",
+			callMock:   true,
+			wantStatus: 404,
+			wantResult: []byte(`{
+				"code":     "NOT_FOUND",
+				"message": "expense not found"
+			}`),
+			mockErr:    entity.ErrNotFound,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			mockedRepo := new(mockExpenseRepo)
+			if tc.callMock {
+				mockedRepo.
+					On("Delete", mock.Anything, tc.id).
+					Return(tc.mockErr)
+			}
+			ctx := context.Background()
+			ts := httptest.NewServer(createHandler(ctx, mockedRepo))
+			defer ts.Close()
+
+			req, err := http.NewRequest(http.MethodDelete, ts.URL+"/api/expense/"+tc.id, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, tc.wantStatus, res.StatusCode)
+
+			got, err := io.ReadAll(res.Body)
+			res.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			assert.Equal(t, res.Header.Get("content-type"), "application/json")
+
+			mockedRepo.AssertExpectations(t)
+			if string(tc.wantResult) == "" {
+				assert.Empty(t, got)
+			} else {
+				assert.JSONEq(t, string(tc.wantResult), string(got))
+			}
 
 		})
 	}
