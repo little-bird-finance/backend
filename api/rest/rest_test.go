@@ -238,7 +238,7 @@ func TestCreateExpense(t *testing.T) {
 			}`),
 		},
 		"bad request invalid amount": {
-			id:         "3",
+			id: "3",
 			sent: []byte(`{
 				"amount": "2,3"
 			}`),
@@ -333,7 +333,7 @@ func TestDeleteExpense(t *testing.T) {
 				"code":     "NOT_FOUND",
 				"message": "expense not found"
 			}`),
-			mockErr:    entity.ErrNotFound,
+			mockErr: entity.ErrNotFound,
 		},
 	}
 

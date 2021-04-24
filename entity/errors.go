@@ -6,10 +6,10 @@ import (
 )
 
 var (
-	ErrUnknown  = errors.New("unknown error")
-	ErrBusiness = errors.New("")
+	ErrUnknown   = errors.New("unknown error")
+	ErrBusiness  = errors.New("")
 	ErrTechnical = errors.New("")
-	ErrNotFound = fmt.Errorf("%wnot found", ErrBusiness)
+	ErrNotFound  = fmt.Errorf("%wnot found", ErrBusiness)
 )
 
 func NewFieldError(err error, field, code, description string) FieldError {

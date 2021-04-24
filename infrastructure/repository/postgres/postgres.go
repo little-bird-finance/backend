@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/axpira/backend/entity"
+	"github.com/axpira/backend/entity/config"
+
 	_ "github.com/jackc/pgx/v4/stdlib"
 
 	// _ "github.com/lib/pq"
@@ -115,11 +116,9 @@ type Repository interface {
 
 type DB interface {
 	ExecContext(_ context.Context, query string, args ...interface{}) (sql.Result, error)
-	QueryRowContext(ctx context.Context, query string, args... interface{}) *sql.Row
-	QueryContext(ctx context.Context, query string, args... interface{}) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
 }
-
-
 
 type expenseRepository struct {
 	db      DB
@@ -127,7 +126,7 @@ type expenseRepository struct {
 }
 
 func NewExpenseRepository() (Repository, error) {
-	db, err := sql.Open("pgx", os.Getenv("DATABASE_URL"))
+	db, err := sql.Open("pgx", config.Config.DatabaseUrl)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"os/signal"
 
 	"github.com/axpira/backend/api/rest"
+	"github.com/axpira/backend/entity/config"
 	"github.com/axpira/backend/infrastructure/repository/postgres"
 	"github.com/rs/zerolog"
 )
@@ -18,6 +19,8 @@ func main() {
 		Str("service", "backend").
 		Logger()
 	ctx = l.WithContext(ctx)
+	err := config.InitConfig()
+	fatalOnError(l, err, "error on init config")
 
 	repo, err := postgres.NewExpenseRepository()
 	fatalOnError(l, err, "error on create repository")
@@ -29,8 +32,7 @@ func main() {
 	l.Info().Str("service", "rest").Str("action", "started").Msg("waiting connection")
 
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
-	// Waiting for SIGINT (pkill -2)
+	signal.Notify(stop, os.Interrupt, os.Kill)
 	<-stop
 
 	restService.Stop(ctx)
