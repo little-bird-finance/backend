@@ -125,8 +125,12 @@ type expenseRepository struct {
 	entropy io.Reader
 }
 
-func NewExpenseRepository() (Repository, error) {
+func NewExpenseRepository(ctx context.Context) (Repository, error) {
 	db, err := sql.Open("pgx", config.Config.DatabaseUrl)
+	if err != nil {
+		return nil, err
+	}
+	err = db.PingContext(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -22,7 +22,9 @@ func main() {
 	err := config.InitConfig()
 	fatalOnError(l, err, "error on init config")
 
-	repo, err := postgres.NewExpenseRepository()
+	l.Info().Msgf("%v", config.Config)
+
+	repo, err := postgres.NewExpenseRepository(ctx)
 	fatalOnError(l, err, "error on create repository")
 	restService, err := rest.New(ctx, repo)
 	fatalOnError(l, err, "error on create rest service")
