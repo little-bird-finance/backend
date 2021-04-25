@@ -10,4 +10,4 @@ FROM scratch
 WORKDIR /bin
 EXPOSE 3000
 COPY --from=builder /app/app .
-CMD [ "./app" ]
+CMD [ "/bin/app" ]

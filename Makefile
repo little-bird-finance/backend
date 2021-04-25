@@ -76,7 +76,7 @@ build-all: $(BIN_PATH) ## Create a binary for each platform
 # docker: ## Cria uma imagem docker
 # 	docker build .
 #
-container-build: ## Create a container image
+container-image-build: ## Create a container image
 	$(CONTAINER_CMD) build -f ops/Containerfile -t $(CONTAINER_IMAGE_NAME):$(CONTAINER_IMAGE_TAG) .
 # #go test -run=.*/trailing -v
 #
