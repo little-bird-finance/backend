@@ -7,11 +7,11 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o app cmd/main.go
 
-FROM scratch
-#FROM alpine:latest
+#FROM scratch
+FROM alpine:latest
 WORKDIR /bin/
-COPY --from=builder /etc_passwd /etc/passwd
+#COPY --from=builder /etc_passwd /etc/passwd
 COPY --from=builder /app/app .
-USER nobody
+#USER nobody
 EXPOSE 3000
 CMD [ "./app" ]
