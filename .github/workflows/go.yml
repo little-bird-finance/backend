@@ -1,0 +1,56 @@
+name: Go
+
+on:
+  push:
+  #  branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.15
+
+    - name: Build
+      run: make build
+
+    - name: Test
+      run: make test-unit
+
+    - uses: codecov/codecov-action@v1
+      with:
+        #token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
+        # files: ./coverage1.xml,./coverage2.xml # optional
+        # flags: unittests # optional
+        # name: codecov-umbrella # optional
+        fail_ci_if_error: true # optional (default = false)
+        verbose: true # optional (default = false)
+
+    - name: Container Build
+      run: make container-build
+
+    - name: Deploy
+      run: |
+        echo "${{ secrets.HEROKU_API_KEY }}" | docker login -u "_" --password-stdin registry.heroku.com
+        docker tag little-bird-finance:latest registry.heroku.com/little-bird-finance-backend/web
+        docker push registry.heroku.com/little-bird-finance-backend/web
+        imageId=$(docker inspect registry.heroku.com/little-bird-finance-backend/web --format={{.Id}})
+        curl -X PATCH https://api.heroku.com/apps/little-bird-finance-backend/formation \
+          -d '{
+          "updates": [
+            {
+              "type": "web",
+              "docker_image": "'"$imageId"'"
+            }
+          ]
+        }' \
+          -H "Content-Type: application/json" \
+          -H "Accept: application/vnd.heroku+json; version=3.docker-releases" \
+          -H "Authorization: Bearer ${{ secrets.HEROKU_API_KEY }}"
