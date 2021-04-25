@@ -1,4 +1,5 @@
 
+[![codecov](https://codecov.io/gh/little-bird-finance/backend/branch/main/graph/badge.svg?token=73L7RYW4I8)](https://codecov.io/gh/little-bird-finance/backend)
 [![Go Report Card](https://goreportcard.com/badge/github.com/little-bird-finance/backend)](https://goreportcard.com/report/github.com/little-bird-finance/backend)
 [![Build Status](https://travis-ci.com/little-bird-finance/backend.svg?branch=main)](https://travis-ci.com/little-bird-finance/backend)
 [![Coverage Status](https://coveralls.io/repos/github/little-bird-finance/backend/badge.svg?branch=main)](https://coveralls.io/github/little-bird-finance/backend?branch=main)
