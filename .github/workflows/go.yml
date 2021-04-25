@@ -43,7 +43,7 @@ jobs:
         # flags: unittests # optional
         # name: codecov-umbrella # optional
         fail_ci_if_error: true # optional (default = false)
-        verbose: true # optional (default = false)
+        # verbose: true # optional (default = false)
 
     - name: Container Build
       run: docker build -f ops/Containerfile -t little-bird-finance:latest .
