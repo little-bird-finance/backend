@@ -46,7 +46,7 @@ jobs:
         verbose: true # optional (default = false)
 
     - name: Container Build
-      run: docker build -f ops/Containerfile -t little-bird-finance:latest
+      run: docker build -f ops/Containerfile -t little-bird-finance:latest .
 
     - name: Deploy
       run: |
