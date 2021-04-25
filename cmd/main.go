@@ -13,7 +13,10 @@ import (
 
 func main() {
 	ctx := context.Background()
-	l := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().
+	l := zerolog.
+		New(zerolog.ConsoleWriter{Out: os.Stderr}).
+		Level(zerolog.DebugLevel).
+		With().
 		Timestamp().
 		Caller().
 		Str("service", "backend").

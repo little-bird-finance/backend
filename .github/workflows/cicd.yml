@@ -1,0 +1,61 @@
+name: Go
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.16
+
+    - name: Go report card
+      run: curl -X POST -F "repo=github.com/little-bird-finance/backend" https://goreportcard.com/checks
+
+    - name: Build
+      run: go build -o dist/backend cmd/main.go
+
+    - name: Test
+      run: go test ./...
+
+    - name: Coverage Test
+      run: go test -coverprofile=dist/coverage.out ./...
+
+    # - name: Coveralls
+    #   uses: coverallsapp/github-action@master
+    #   with:
+    #     github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Codecov
+      uses: codecov/codecov-action@v1
+      with:
+        fail_ci_if_error: true
+
+    - name: Container Build
+      run: docker build -f ops/Containerfile -t little-bird-finance:latest .
+
+    - name: Deploy
+      run: |
+        echo "${{ secrets.HEROKU_API_KEY }}" | docker login -u "_" --password-stdin registry.heroku.com
+        docker tag little-bird-finance:latest registry.heroku.com/little-bird-finance-backend/web
+        docker push registry.heroku.com/little-bird-finance-backend/web
+        imageId=$(docker inspect registry.heroku.com/little-bird-finance-backend/web --format={{.Id}})
+        curl -X PATCH https://api.heroku.com/apps/little-bird-finance-backend/formation \
+          -d '{
+          "updates": [
+            {
+              "type": "web",
+              "docker_image": "'"$imageId"'"
+            }
+          ]
+        }' \
+          -H "Content-Type: application/json" \
+          -H "Accept: application/vnd.heroku+json; version=3.docker-releases" \
+          -H "Authorization: Bearer ${{ secrets.HEROKU_API_KEY }}"

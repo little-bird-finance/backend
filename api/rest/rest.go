@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/axpira/backend/entity"
+	"github.com/axpira/backend/entity/config"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog/log"
@@ -105,8 +106,9 @@ type service struct {
 }
 
 func New(ctx context.Context, repo ExpenseRepository) (Service, error) {
+	addr := fmt.Sprintf(":%v", config.Config.Port)
 	srv := &http.Server{
-		Addr:    ":3000",
+		Addr:    addr,
 		Handler: createHandler(ctx, repo),
 	}
 	return &service{
@@ -115,6 +117,8 @@ func New(ctx context.Context, repo ExpenseRepository) (Service, error) {
 }
 
 func (s *service) Start(ctx context.Context) {
+	l := log.Ctx(ctx)
+	l.Info().Str("addr", s.srv.Addr).Msg("start http server")
 	go func() {
 		if err := s.srv.ListenAndServe(); err != http.ErrServerClosed {
 			log.Ctx(ctx).Fatal().Msgf("error on start rest service: %v", err)
@@ -278,6 +282,7 @@ func deleteExpense(repo ExpenseRepository) func(w http.ResponseWriter, r *http.R
 	}
 }
 func (s *service) Stop(ctx context.Context) error {
+	log.Ctx(ctx).Info().Str("addr", s.srv.Addr).Msg("stop http server")
 	return s.srv.Shutdown(ctx)
 }
 
