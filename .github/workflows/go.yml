@@ -18,6 +18,9 @@ jobs:
       with:
         go-version: 1.16
 
+    - name: Go report card
+      run: curl -X POST -F "repo=github.com/little-bird-finance/backend" https://goreportcard.com/checks
+
     - name: Build
       run: go build -o dist/backend cmd/main.go
 
