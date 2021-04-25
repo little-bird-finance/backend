@@ -106,7 +106,7 @@ type service struct {
 }
 
 func New(ctx context.Context, repo ExpenseRepository) (Service, error) {
-	addr := fmt.Sprintf("%v", config.Config.Port)
+	addr := fmt.Sprintf(":%v", config.Config.Port)
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: createHandler(ctx, repo),
@@ -282,7 +282,7 @@ func deleteExpense(repo ExpenseRepository) func(w http.ResponseWriter, r *http.R
 	}
 }
 func (s *service) Stop(ctx context.Context) error {
-	log.Ctx(ctx).Info().Str("addr", s.srv.Addr).Msg("strop http server")
+	log.Ctx(ctx).Info().Str("addr", s.srv.Addr).Msg("stop http server")
 	return s.srv.Shutdown(ctx)
 }
 
