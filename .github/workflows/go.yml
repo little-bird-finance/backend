@@ -30,7 +30,13 @@ jobs:
     - name: Coverage Test
       run: go test -coverprofile=dist/coverage.out ./...
 
-    - uses: codecov/codecov-action@v1
+    - name: Coveralls
+      uses: coverallsapp/github-action@master
+      # with:
+      #   github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Codecov
+      uses: codecov/codecov-action@v1
       with:
         #token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
         # files: ./coverage1.xml,./coverage2.xml # optional
