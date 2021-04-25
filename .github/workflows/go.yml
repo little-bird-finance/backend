@@ -19,7 +19,7 @@ jobs:
         go-version: 1.15
 
     - name: Build
-      run: make build
+      run: go build -o dist/backend cmd/main.go
 
     - name: Test
       run: make test-unit
@@ -34,7 +34,7 @@ jobs:
         verbose: true # optional (default = false)
 
     - name: Container Build
-      run: make container-build
+      run: docker build -f ops/Containerfile -t little-bird-finance:latest
 
     - name: Deploy
       run: |
