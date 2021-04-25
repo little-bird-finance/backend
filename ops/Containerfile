@@ -10,4 +10,5 @@ FROM scratch
 WORKDIR /bin
 EXPOSE 3000
 COPY --from=builder /app/app .
-CMD [ "/bin/app" ]
+USER nobody
+CMD [ "./app" ]
