@@ -1,14 +1,19 @@
+include .env
+
 .DEFAULT_GOAL := all
 
 .PHONY: help run test cover test-integration test-unit docker-integration-start docker-integration-stop watch-test
 
 # PROTOS_SRC          := $(wildcard entity/*.proto)
 # PROTOS_BIN          := $(PROTOS_SRC:.proto=.pb.go)
-BIN_PATH            := dist
-COVER_FILE_PATH     := $(BIN_PATH)/coverage.out
-SCANAPI_REPORT_PATH := $(BIN_PATH)/scanapi-report.html
-DOC_ADDR            := :8081
-TESTS_PATH          := ./...
+BIN_PATH             := dist
+COVER_FILE_PATH      := $(BIN_PATH)/coverage.out
+SCANAPI_REPORT_PATH  := $(BIN_PATH)/scanapi-report.html
+DOC_ADDR             := :8081
+TESTS_PATH           := ./...
+CONTAINER_CMD        := docker
+CONTAINER_IMAGE_NAME := little-bird-finance-backend
+CONTAINER_IMAGE_TAG  := latest
 
 all: cover-file test-unit build
 
@@ -70,6 +75,13 @@ build-all: $(BIN_PATH) ## Create a binary for each platform
 
 # docker: ## Cria uma imagem docker
 # 	docker build .
+#
+container-build: ## Create a container image
+	$(CONTAINER_CMD) build -f ops/Containerfile -t $(CONTAINER_IMAGE_NAME):$(CONTAINER_IMAGE_TAG) .
+# #go test -run=.*/trailing -v
+#
+container-run: ## Create a container image
+	$(CONTAINER_CMD) run -p 3000:3000 --env-file .env $(CONTAINER_IMAGE_NAME):$(CONTAINER_IMAGE_TAG)
 # #go test -run=.*/trailing -v
 
 fmt: ## Format all code with gofmt
