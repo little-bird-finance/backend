@@ -106,7 +106,7 @@ type service struct {
 }
 
 func New(ctx context.Context, repo ExpenseRepository) (Service, error) {
-	addr := fmt.Sprintf("%v", config.Port)
+	addr := fmt.Sprintf("%v", config.Config.Port)
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: createHandler(ctx, repo),
