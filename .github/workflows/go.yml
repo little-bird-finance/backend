@@ -22,7 +22,7 @@ jobs:
       run: go build -o dist/backend cmd/main.go
 
     - name: Test
-      run: make test-unit
+      run: go test ./...
 
     - uses: codecov/codecov-action@v1
       with:
